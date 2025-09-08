@@ -88,7 +88,7 @@ class MediaHookEvaluation(BaseModel):
     hook_name_ja: str = Field(..., description="メディアフック名（日本語）")
     score: EvaluationScore = Field(..., description="5段階評価スコア")
     description: str = Field(..., description="評価の説明")
-    examples: List[str] = Field(default_factory=list, description="改善例")
+    improve_examples: List[str] = Field(default_factory=list, description="改善例")
     current_elements: List[str] = Field(default_factory=list, description="現在含まれている要素")
 
 

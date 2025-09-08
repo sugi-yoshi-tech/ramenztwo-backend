@@ -5,6 +5,7 @@ import time
 from fastapi import FastAPI, HTTPException, Body
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
 
 # models.pyから定義したデータ型をインポート
 from models import PressReleaseInput, PressReleaseAnalysisResponse, MediaHookType
@@ -24,8 +25,22 @@ client = instructor.patch(AsyncOpenAI(api_key=api_key))
 # FastAPIアプリケーションのインスタンスを作成
 app = FastAPI(
     title="Press Release Analysis API",
-    description="最新のデータ型定義に基づき、プレスリリースをメディアフックの観点から分析し、改善点を提案するAPI",
+    description="データ型定義に基づき、プレスリリースをメディアフックの観点から分析し、改善点を提案する",
     version="3.0.0",
+)
+
+# CORSを許可するオリジン（Next.jsのURL）
+origins = [
+    "http://localhost:3000", # Next.jsの開発サーバー
+    # "https://your-production-site.com", # 本番環境のURLも必要に応じて追加
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"], # すべてのHTTPメソッドを許可
+    allow_headers=["*"], # すべてのヘッダーを許可
 )
 
 # 各メディアフックの日本語名と説明を定義
