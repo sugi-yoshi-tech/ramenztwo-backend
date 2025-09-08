@@ -2,3 +2,5 @@ fastapi
 openai
 python-dotenv
 python-multipart
+instructor
+pydantic

@@ -1,99 +1,95 @@
 import os
 import base64
-import json
+import instructor
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form
-from pydantic import BaseModel, Field
+# PydanticからEnum, Field, field_validatorを追加でインポート
+from pydantic import BaseModel, Field, field_validator 
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from typing import List
+from enum import Enum # enumをインポート
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
 
+# --- 1. Enumで選択肢を定義 ---
+class ImageCategory(str, Enum):
+    """画像のカテゴリを定義するEnum"""
+    INDOOR = "室内"
+    OUTDOOR = "屋外"
+    PORTRAIT = "人物"
+    LANDSCAPE = "風景"
+    DOCUMENT = "ドキュメント"
+    OTHER = "その他"
+
+# --- 構造化出力用のPydanticモデルを拡張 ---
+class ImageAnalysisResponse(BaseModel):
+    category: ImageCategory = Field(..., description="提示された選択肢の中から、最も画像のカテゴリに合うものを1つ選んでください。")
+    description: str = Field(..., description="画像の内容を詳細に説明した文章。")
+    objects: List[str] = Field(..., description="画像に写っている主要なオブジェクトのリスト。最低1つは挙げてください。")
+    confidence_score: float = Field(..., description="この分析結果に対するAIの自信度を0.0から1.0の間の数値で示してください。")
+    analysis: str = Field(..., description="ユーザーからの指示や質問に対する分析結果や回答。")
+
+    # --- 2. Validatorで意味的なチェックを定義 ---
+    @field_validator("objects")
+    def objects_must_not_be_empty(cls, v):
+        """objectsリストが空ではないことを検証する"""
+        if not v:
+            raise ValueError("画像からオブジェクトが検出されませんでした。必ず1つ以上リストに含めてください。")
+        return v
+
+    @field_validator("confidence_score")
+    def score_must_be_in_range(cls, v):
+        """confidence_scoreが0.0から1.0の範囲内であることを検証する"""
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("自信度は0.0から1.0の範囲でなければなりません。")
+        return v
+
+
 # FastAPIアプリケーションのインスタンスを作成
 app = FastAPI(
-    title="Image Analysis API with FastAPI",
-    description="画像とテキストを受け取り、ChatGPT(gpt-4o)で分析してJSON形式で返すAPI",
-    version="2.0.0",
+    title="Advanced Image Analysis API",
+    description="ValidatorとEnumを活用した、より堅牢な構造化JSONを返すAPI",
+    version="4.0.0",
 )
 
-# OpenAI APIキーを環境変数から取得
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise ValueError("環境変数 `OPENAI_API_KEY` が設定されていません。")
-
-# 非同期対応のOpenAIクライアントを初期化
-client = AsyncOpenAI(api_key=api_key)
+# instructor でOpenAIクライアントをパッチ
+client = instructor.patch(AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")))
 
 
-# --- APIエンドポイントの作成 ---
-@app.post("/analyze_image")
+@app.post("/analyze_image_advanced", response_model=ImageAnalysisResponse)
 async def analyze_image(
     text: str = Form(..., description="画像に対して行う指示や質問を記述します。"),
     image: UploadFile = File(..., description="分析対象の画像ファイル。")
 ):
     """
-    画像とテキストを受け取り、分析結果をJSON形式で返すエンドポイント
+    画像とテキストを分析し、検証済みの構造化JSONを返すエンドポイント
     """
-    # アップロードされたファイルが画像かどうかの簡単なチェック
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="アップロードされたファイルは画像形式ではありません。")
 
-    # 画像ファイルを読み込み、Base64にエンコード
     image_bytes = await image.read()
     base64_image = base64.b64encode(image_bytes).decode("utf-8")
     base64_image_url = f"data:{image.content_type};base64,{base64_image}"
 
-    # サーバー側でプロンプトを定義
-    # ここでChatGPTの役割と、返すJSONの構造を厳密に指示します
-    SYSTEM_PROMPT = """
-あなたは優秀な画像分析AIです。ユーザーから送られてくる画像とテキストに基づき、以下のタスクを実行してください。
-レスポンスは必ず指定されたJSON形式で、他のテキストは一切含めずに返してください。
-
-{
-  "description": "画像の内容を詳細に説明してください。",
-  "objects": ["画像に写っている主要なオブジェクトをリスト形式で列挙してください。"],
-  "analysis": "ユーザーからの指示や質問に対する分析結果や回答をここに記述してください。"
-}
-"""
     try:
-        # ChatGPT API (Visionモデル) を非同期で呼び出す
-        completion = await client.chat.completions.create(
-            # 画像入力に対応したモデルを指定 (gpt-4oが推奨)
+        analysis_result = await client.chat.completions.create(
             model="gpt-4o",
-            # ★レスポンス形式をJSONに固定する設定
-            response_format={"type": "json_object"},
+            response_model=ImageAnalysisResponse,
+            # instructorにバリデーションに失敗した場合の再試行を指示
+            max_retries=3,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "user",
                     "content": [
-                        # ユーザーからのテキスト指示
-                        {"type": "text", "text": text},
-                        # Base64エンコードされた画像
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": base64_image_url}
-                        }
+                        {"type": "text", "text": f"この画像を分析してください。指示: {text}"},
+                        {"type": "image_url", "image_url": {"url": base64_image_url}}
                     ]
                 }
             ],
             max_tokens=1500,
         )
-
-        response_content = completion.choices[0].message.content
-
-        if response_content is None:
-             raise HTTPException(status_code=500, detail="APIから有効なレスポンスが得られませんでした。")
-
-        # 文字列として返ってきたJSONをパースして辞書型に変換
-        # FastAPIが自動で辞書をJSONレスポンスに変換してくれます
-        return json.loads(response_content)
-
+        return analysis_result
     except Exception as e:
         print(f"エラーが発生しました: {e}")
         raise HTTPException(status_code=500, detail="処理中にサーバーエラーが発生しました。")
-
-# サーバーの動作確認用エンドポイント
-@app.get("/")
-def read_root():
-    return {"message": "サーバーは正常に起動しています。"}
