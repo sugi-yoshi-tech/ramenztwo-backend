@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "charliermarsh.ruff",
+    "mhutchie.git-graph",
+    "kevinrose.vsc-python-indent",
+    "ms-azuretools.vscode-docker",
+    "ms-python.python",
+    "redhat.vscode-yaml"
+  ]
+}
