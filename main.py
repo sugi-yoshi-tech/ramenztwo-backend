@@ -1,91 +1,107 @@
 import os
 import instructor
 from fastapi import FastAPI, HTTPException, Form
-# PydanticからEnum, Field, field_validatorを追加でインポート
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, conint, field_validator
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from typing import List
-from enum import Enum # enumをインポート
+from enum import Enum
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
+MODEL = "gpt-4o-mini" # モデルは要件に合わせて変更してください
 
-# --- 1. テキストカテゴリ用のEnumを定義 ---
-class TextCategory(str, Enum):
-    """テキストのカテゴリを定義するEnum"""
-    EMAIL = "メール"
-    REPORT = "レポート"
-    NEWS_ARTICLE = "ニュース記事"
-    SOCIAL_MEDIA_POST = "SNS投稿"
-    CONTRACT = "契約書"
-    OTHER = "その他"
+# --- メディアフックの9つの要素を定義するEnum ---
+class MediaHook(str, Enum):
+    """メディアフックを構成する9つの要素を定義するEnum"""
+    TIMELINESS_SEASONALITY = "時流／季節性"
+    IMAGE_VIDEO = "画像／映像"
+    PARADOX_CONFLICT = "逆説／対立"
+    REGIONALITY = "地域性"
+    TOPICALITY = "話題性"
+    SOCIAL_PUBLIC_INTEREST = "社会性／公益性"
+    NOVELTY_UNIQUENESS = "新規性／独自性"
+    SUPERLATIVE_RARITY = "最上級／希少性"
+    UNEXPECTEDNESS = "意外性"
 
-# --- 構造化出力用のPydanticモデルをテキスト分析用に変更 ---
-class TextAnalysisResponse(BaseModel):
-    category: TextCategory = Field(..., description="提示された選択肢の中から、最もテキストのカテゴリに合うものを1つ選んでください。")
-    summary: str = Field(..., description="テキスト全体の内容を要約した文章。")
-    keywords: List[str] = Field(..., description="テキスト中の主要なキーワードやエンティティのリスト。最低3つは挙げてください。")
-    confidence_score: float = Field(..., description="この分析結果に対するAIの自信度を0.0から1.0の間の数値で示してください。")
-    analysis: str = Field(..., description="ユーザーからの指示や質問に対する分析結果や回答。")
+# --- 構造化出力用のPydanticモデル（修正箇所） ---
 
-    # --- 2. Validatorで意味的なチェックを定義 ---
-    @field_validator("keywords")
-    def keywords_must_not_be_empty(cls, v):
-        """keywordsリストが空ではないことを検証する"""
-        if not v or len(v) < 1: # 1つ以上を要求
-            raise ValueError("テキストからキーワードが抽出されませんでした。必ず1つ以上リストに含めてください。")
+class ImprovementSuggestions(BaseModel):
+    title_suggestions: List[str] = Field(..., description="タイトルの改善点を5つ挙げてください。", min_items=5, max_items=5)
+    paragraph_suggestions: List[List[str]] = Field(..., description="各段落の改善点をそれぞれ5つずつ挙げてください。リストの各要素が1つの段落に対応します。")
+
+# ▼▼▼【変更点 1】辞書ではなく、リストで受け取るための新しいモデルを定義 ▼▼▼
+class SingleHookEvaluation(BaseModel):
+    """メディアフックの単一要素に対する評価を格納するモデル"""
+    hook_name: MediaHook = Field(..., description="評価対象のメディアフックの要素名。")
+    evaluation: conint(ge=1, le=5) = Field(..., description="1から5までの5段階評価。")
+    reason: str = Field(..., description="なぜその評価になったのかの具体的な理由。")
+
+class ArticleAnalysisResponse(BaseModel):
+    """記事分析結果の全体を格納するモデル"""
+    media_hook_evaluations: List[SingleHookEvaluation] = Field(..., description="メディアフック9要素それぞれに対する評価と理由のリスト。")
+    improvement_suggestions: ImprovementSuggestions = Field(..., description="タイトルと各段落の具体的な改善案。")
+
+    @field_validator("media_hook_evaluations")
+    def check_all_hooks_evaluated(cls, v):
+        """全てのメディアフックが評価されているか検証する"""
+        if len(v) != len(MediaHook):
+            raise ValueError("9つ全てのメディアフック要素を評価してください。")
         return v
-
-    @field_validator("confidence_score")
-    def score_must_be_in_range(cls, v):
-        """confidence_scoreが0.0から1.0の範囲内であることを検証する"""
-        if not (0.0 <= v <= 1.0):
-            raise ValueError("自信度は0.0から1.0の範囲でなければなりません。")
-        return v
-
 
 # FastAPIアプリケーションのインスタンスを作成
 app = FastAPI(
-    title="Advanced Text Analysis API",
-    description="ValidatorとEnumを活用した、堅牢な構造化テキスト分析JSONを返すAPI",
-    version="1.0.0",
+    title="Article Analysis API for Media Hooks",
+    description="メディアフックの観点から記事を分析し、改善点を提案するAPI",
+    version="2.1.0", # バージョンアップ
 )
 
 # instructor でOpenAIクライアントをパッチ
 client = instructor.patch(AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")))
 
-
-@app.post("/analyze_text_advanced", response_model=TextAnalysisResponse)
-async def analyze_text(
-    instruction: str = Form(..., description="テキストに対して行う指示や質問を記述します。"),
-    text_to_analyze: str = Form(..., description="分析対象のテキスト本文。")
+@app.post("/analyze_article", response_model=ArticleAnalysisResponse)
+async def analyze_article(
+    title: str = Form(..., description="分析対象の記事タイトル。"),
+    article_body: str = Form(..., description="分析対象の記事本文。改行で段落を区切ってください。"),
+    persona: str = Form(..., description="記事のターゲットとなるペルソナ。")
 ):
-    """
-    テキストを分析し、検証済みの構造化JSONを返すエンドポイント
-    """
     try:
+        paragraphs = article_body.strip().split('\n')
+        paragraph_count = len(paragraphs)
+
         analysis_result = await client.chat.completions.create(
-            model="gpt-4o",
-            response_model=TextAnalysisResponse,
-            # instructorにバリデーションに失敗した場合の再試行を指示
+            model=MODEL,
+            response_model=ArticleAnalysisResponse,
             max_retries=3,
             messages=[
                 {
+                    "role": "system",
+                    "content": "あなたは優秀な広報・PRの専門家です。提供された記事をメディアフックの観点から厳しく分析し、具体的な改善点を提案してください。"
+                },
+                {
                     "role": "user",
-                    "content": f"""以下のテキストを分析してください。
+                    "content": f"""以下の記事を分析し、メディアフックの9要素をそれぞれ5段階で評価し、タイトルと各段落の改善点を5つずつ提案してください。
 
-# 指示
-{instruction}
+# ターゲットペルソナ
+{persona}
 
-# 分析対象テキスト
-{text_to_analyze}
+# 記事タイトル
+{title}
+
+# 記事本文（{paragraph_count}個の段落で構成されています）
+{article_body}
+
+## 分析の指示
+1.  **メディアフックの評価**: 9つの要素それぞれについて、評価(1-5)、理由、要素名を `{{"hook_name": "要素名", "evaluation": 評価, "reason": "理由"}}` という形式のオブジェクトにし、それらをリストとして生成してください。
+2.  **改善点の提案**:
+    -   タイトルの改善案を5つ提案してください。
+    -   記事本文の各段落（全部で{paragraph_count}個）について、それぞれ改善案を5つずつ提案してください。出力は段落の数に応じたリストのリスト形式にしてください。
 """
                 }
             ],
-            max_tokens=1500,
+            max_tokens=4000,
         )
         return analysis_result
     except Exception as e:
         print(f"エラーが発生しました: {e}")
-        raise HTTPException(status_code=500, detail="処理中にサーバーエラーが発生しました。")
+        raise HTTPException(status_code=500, detail=f"処理中にサーバーエラーが発生しました: {str(e)}")
