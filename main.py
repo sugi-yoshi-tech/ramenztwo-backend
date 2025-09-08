@@ -1,107 +1,121 @@
 import os
 import instructor
-from fastapi import FastAPI, HTTPException, Form
-from pydantic import BaseModel, Field, conint, field_validator
+import uuid
+import time
+from fastapi import FastAPI, HTTPException, Body
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
-from typing import List
-from enum import Enum
+
+# models.pyから定義したデータ型をインポート
+from models import PressReleaseInput, PressReleaseAnalysisResponse, MediaHookType
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
-MODEL = "gpt-4o-mini" # モデルは要件に合わせて変更してください
+MODEL = os.getenv("OPENAI_MODEL", "gpt-4o") # 環境変数からモデル名を取得、なければgpt-4o
 
-# --- メディアフックの9つの要素を定義するEnum ---
-class MediaHook(str, Enum):
-    """メディアフックを構成する9つの要素を定義するEnum"""
-    TIMELINESS_SEASONALITY = "時流／季節性"
-    IMAGE_VIDEO = "画像／映像"
-    PARADOX_CONFLICT = "逆説／対立"
-    REGIONALITY = "地域性"
-    TOPICALITY = "話題性"
-    SOCIAL_PUBLIC_INTEREST = "社会性／公益性"
-    NOVELTY_UNIQUENESS = "新規性／独自性"
-    SUPERLATIVE_RARITY = "最上級／希少性"
-    UNEXPECTEDNESS = "意外性"
+# instructorでOpenAIクライアントをパッチ
+# APIキーが設定されていない場合はエラーを出す
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ValueError("OPENAI_API_KEY is not set in the environment variables.")
 
-# --- 構造化出力用のPydanticモデル（修正箇所） ---
-
-class ImprovementSuggestions(BaseModel):
-    title_suggestions: List[str] = Field(..., description="タイトルの改善点を5つ挙げてください。", min_items=5, max_items=5)
-    paragraph_suggestions: List[List[str]] = Field(..., description="各段落の改善点をそれぞれ5つずつ挙げてください。リストの各要素が1つの段落に対応します。")
-
-# ▼▼▼【変更点 1】辞書ではなく、リストで受け取るための新しいモデルを定義 ▼▼▼
-class SingleHookEvaluation(BaseModel):
-    """メディアフックの単一要素に対する評価を格納するモデル"""
-    hook_name: MediaHook = Field(..., description="評価対象のメディアフックの要素名。")
-    evaluation: conint(ge=1, le=5) = Field(..., description="1から5までの5段階評価。")
-    reason: str = Field(..., description="なぜその評価になったのかの具体的な理由。")
-
-class ArticleAnalysisResponse(BaseModel):
-    """記事分析結果の全体を格納するモデル"""
-    media_hook_evaluations: List[SingleHookEvaluation] = Field(..., description="メディアフック9要素それぞれに対する評価と理由のリスト。")
-    improvement_suggestions: ImprovementSuggestions = Field(..., description="タイトルと各段落の具体的な改善案。")
-
-    @field_validator("media_hook_evaluations")
-    def check_all_hooks_evaluated(cls, v):
-        """全てのメディアフックが評価されているか検証する"""
-        if len(v) != len(MediaHook):
-            raise ValueError("9つ全てのメディアフック要素を評価してください。")
-        return v
+client = instructor.patch(AsyncOpenAI(api_key=api_key))
 
 # FastAPIアプリケーションのインスタンスを作成
 app = FastAPI(
-    title="Article Analysis API for Media Hooks",
-    description="メディアフックの観点から記事を分析し、改善点を提案するAPI",
-    version="2.1.0", # バージョンアップ
+    title="Press Release Analysis API",
+    description="最新のデータ型定義に基づき、プレスリリースをメディアフックの観点から分析し、改善点を提案するAPI",
+    version="3.0.0",
 )
 
-# instructor でOpenAIクライアントをパッチ
-client = instructor.patch(AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")))
+# 各メディアフックの日本語名と説明を定義
+MEDIA_HOOK_DETAILS = {
+    MediaHookType.TRENDING_SEASONAL: {"ja": "時流・季節性", "desc": "社会のトレンドや季節イベントに関連しているか"},
+    MediaHookType.UNEXPECTEDNESS: {"ja": "意外性", "desc": "常識を覆すような驚きがあるか"},
+    MediaHookType.PARADOX_CONFLICT: {"ja": "逆説・対立", "desc": "一見矛盾する要素や対立構造があるか"},
+    MediaHookType.REGIONAL: {"ja": "地域性", "desc": "特定の地域に密着した情報か"},
+    MediaHookType.TOPICALITY: {"ja": "話題性", "desc": "現在話題の事柄と関連しているか"},
+    MediaHookType.SOCIAL_PUBLIC: {"ja": "社会性・公益性", "desc": "社会問題の解決など公共の利益に貢献するか"},
+    MediaHookType.NOVELTY_UNIQUENESS: {"ja": "新規性・独自性", "desc": "「日本初」や独自の技術など、他にはない要素があるか"},
+    MediaHookType.SUPERLATIVE_RARITY: {"ja": "最上級・希少性", "desc": "「No.1」や「限定」など、希少価値やインパクトがあるか"},
+    MediaHookType.VISUAL_IMPACT: {"ja": "画像・映像", "desc": "印象的で目を引くビジュアルがあるか"},
+}
 
-@app.post("/analyze_article", response_model=ArticleAnalysisResponse)
-async def analyze_article(
-    title: str = Form(..., description="分析対象の記事タイトル。"),
-    article_body: str = Form(..., description="分析対象の記事本文。改行で段落を区切ってください。"),
-    persona: str = Form(..., description="記事のターゲットとなるペルソナ。")
+
+@app.post("/analyze", response_model=PressReleaseAnalysisResponse)
+async def analyze_press_release(
+    # Bodyから直接PressReleaseInputモデルを受け取る
+    data: PressReleaseInput = Body(...)
 ):
+    """
+    プレスリリースをメディアフックの観点から分析し、評価と改善点を構造化JSONで返すエンドポイント
+    """
+    request_id = f"req_{uuid.uuid4()}"
+    start_time = time.time()
+
     try:
-        paragraphs = article_body.strip().split('\n')
-        paragraph_count = len(paragraphs)
+        # Markdown本文を段落に分割（空行で分割）
+        paragraphs = [p.strip() for p in data.content_markdown.split('\n\n') if p.strip()]
+        
+        # AIへの指示（プロンプト）を作成
+        prompt = f"""
+        # 指示
+        あなたは日本の広報・PR分野におけるトップ専門家です。
+        以下のプレスリリースを分析し、メディアフックの観点から厳しく評価と改善提案を行ってください。
+        出力は必ず指定されたJSON形式に従ってください。
+
+        # 分析対象プレスリリース
+        ## タイトル
+        {data.title}
+        
+        ## ターゲットペルソナ
+        {data.metadata.get('persona', '指定なし')}
+
+        ## 本文（{len(paragraphs)}段落）
+        {data.content_markdown}
+        
+        ## トップ画像
+        - URL: {data.top_image.url if data.top_image else 'なし'}
+        - 代替テキスト: {data.top_image.alt_text if data.top_image else 'なし'}
+
+        # 分析タスク
+        1. **メディアフック評価**: 9つのメディアフック（{', '.join(m.value for m in MediaHookType)}）について、それぞれ評価スコア(1-5)、評価理由、改善例、現在の文章に含まれる要素を具体的に記述してください。日本語名も必ず含めてください。
+        2. **段落ごと改善提案**: 本文の各段落（全{len(paragraphs)}段落）に対して、改善案、改善優先度などを具体的に提案してください。
+        3. **全体評価**: 全体を俯瞰した総括的な評価と、最も優先すべき改善点を挙げてください。
+        """
 
         analysis_result = await client.chat.completions.create(
             model=MODEL,
-            response_model=ArticleAnalysisResponse,
-            max_retries=3,
+            response_model=PressReleaseAnalysisResponse,
+            max_retries=2,
             messages=[
-                {
-                    "role": "system",
-                    "content": "あなたは優秀な広報・PRの専門家です。提供された記事をメディアフックの観点から厳しく分析し、具体的な改善点を提案してください。"
-                },
-                {
-                    "role": "user",
-                    "content": f"""以下の記事を分析し、メディアフックの9要素をそれぞれ5段階で評価し、タイトルと各段落の改善点を5つずつ提案してください。
-
-# ターゲットペルソナ
-{persona}
-
-# 記事タイトル
-{title}
-
-# 記事本文（{paragraph_count}個の段落で構成されています）
-{article_body}
-
-## 分析の指示
-1.  **メディアフックの評価**: 9つの要素それぞれについて、評価(1-5)、理由、要素名を `{{"hook_name": "要素名", "evaluation": 評価, "reason": "理由"}}` という形式のオブジェクトにし、それらをリストとして生成してください。
-2.  **改善点の提案**:
-    -   タイトルの改善案を5つ提案してください。
-    -   記事本文の各段落（全部で{paragraph_count}個）について、それぞれ改善案を5つずつ提案してください。出力は段落の数に応じたリストのリスト形式にしてください。
-"""
-                }
+                {"role": "user", "content": prompt}
             ],
-            max_tokens=4000,
+            max_tokens=4096,
+            temperature=0.2,
         )
+
+        # 処理時間と固定情報をレスポンスに追加
+        end_time = time.time()
+        analysis_result.request_id = request_id
+        analysis_result.processing_time_ms = int((end_time - start_time) * 1000)
+        analysis_result.ai_model_used = MODEL
+        
+        # hook_name_jaを辞書から補完
+        for eval_item in analysis_result.media_hook_evaluations:
+            eval_item.hook_name_ja = MEDIA_HOOK_DETAILS[eval_item.hook_type]["ja"]
+
         return analysis_result
+
     except Exception as e:
-        print(f"エラーが発生しました: {e}")
-        raise HTTPException(status_code=500, detail=f"処理中にサーバーエラーが発生しました: {str(e)}")
+        print(f"Error during analysis for request_id {request_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": {
+                    "code": "ANALYSIS_FAILED",
+                    "message": f"An unexpected error occurred during analysis: {str(e)}"
+                },
+                "request_id": request_id
+            }
+        )
