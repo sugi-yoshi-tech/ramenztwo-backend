@@ -27,8 +27,9 @@ st.markdown("AIがプレスリリースをメディアフックの観点から�
 st.sidebar.header("📝 使い方")
 st.sidebar.write("""
 1.  プレスリリースの**タイトル**と**本文**を入力します。
-2.  **「分析を実行」**ボタンをクリックします。
-3.  AIによる分析結果が右側に表示されるのを待ちます。
+2.  必要に応じて**詳細オプション**で画像情報やターゲットペルソナを設定します。
+3.  **「分析を実行」**ボタンをクリックします。
+4.  AIによる分析結果が右側に表示されるのを待ちます。
 """)
 st.sidebar.info("このアプリを動作させるには、別ターミナルでFastAPIサーバー(`uvicorn main:app --reload`)を起動しておく必要があります。")
 
@@ -36,25 +37,40 @@ st.sidebar.info("このアプリを動作させるには、別ターミナルで
 # フォームを使用して入力と送信ボタンをグループ化
 with st.form("press_release_form"):
     st.header("分析対象のプレスリリースを入力")
-    
-    # サンプルテキスト
-    sample_title = "当社、革新的な新サービス「AIコンシェルジュ」を発表"
-    sample_content = """本日、株式会社サンプルは、顧客対応を自動化する画期的な新サービス「AIコンシェルジュ」の提供を開始したことを発表します。
 
-このサービスは、最新の自然言語処理技術を活用しており、24時間365日、人間のような自然な対話で問い合わせに応じます。初期費用は無料で、月額5万円から利用可能です。"""
-
-    # 入力フィールド
+    # --- 基本入力 ---
     title = st.text_input(
-        "タイトル",
-        value=sample_title
+        "タイトル*",
+        value="当社、革新的な新サービス「AIコンシェルジュ」を発表"
     )
     content_markdown = st.text_area(
-        "本文 (Markdown形式)",
-        value=sample_content,
+        "本文 (Markdown形式)*",
+        value="""本日、株式会社サンプルは、顧客対応を自動化する画期的な新サービス「AIコンシェルジュ」の提供を開始したことを発表します。
+
+このサービスは、最新の自然言語処理技術を活用しており、24時間365日、人間のような自然な対話で問い合わせに応じます。初期費用は無料で、月額5万円から利用可能です。""",
         height=300
     )
-    
+
+    # --- 詳細オプション（折りたたみ）---
+    with st.expander("詳細オプション（画像情報・ペルソナなど）"):
+        st.subheader("トップ画像の情報")
+        image_url = st.text_input(
+            "画像URL",
+            value="https://example.com/images/ai-concierge.jpg"
+        )
+        image_alt_text = st.text_input(
+            "画像の代替テキスト (alt)",
+            value="AIコンシェルジュのイメージ画像"
+        )
+
+        st.subheader("メタデータ")
+        metadata_persona = st.text_input(
+            "ターゲットペルソナ",
+            value="中小企業のカスタマーサポート部門長"
+        )
+
     # 送信ボタン
+    st.markdown("---")
     submitted = st.form_submit_button("分析を実行 →", type="primary")
 
 # --------------------------------------------------------------------------
@@ -65,31 +81,30 @@ with st.form("press_release_form"):
 if submitted:
     # 入力チェック
     if not title.strip() or not content_markdown.strip():
-        st.warning("タイトルと本文の両方を入力してください。")
+        st.warning("必須項目であるタイトルと本文の両方を入力してください。")
     else:
         with st.spinner("AIが分析中です... しばらくお待ちください..."):
-            # APIに送信するデータを作成
+            # APIに送信するデータを作成（入力欄から値を取得）
             payload = {
                 "title": title,
                 "content_markdown": content_markdown,
                 "top_image": {
-                    "url": "https://example.com/images/default.jpg",
-                    "alt_text": "提供された画像はありません"
+                    "url": image_url if image_url.strip() else None,
+                    "alt_text": image_alt_text if image_alt_text.strip() else None
                 },
                 "metadata": {
-                    "persona": "指定なし"
+                    "persona": metadata_persona if metadata_persona.strip() else "指定なし"
                 }
             }
-            
+
             try:
                 # APIにPOSTリクエストを送信
                 response = requests.post(API_URL, json=payload, timeout=120)
-                # エラーがあれば例外を発生させる
-                response.raise_for_status() 
-                
+                response.raise_for_status() # エラーがあれば例外を発生させる
+
                 results = response.json()
                 st.success("分析が完了しました！")
-                
+
                 st.divider()
 
                 # ----------------- 結果表示セクション -----------------
@@ -159,6 +174,7 @@ if submitted:
                     for point in p['improvements']:
                         st.markdown(f"- {point}")
                     st.markdown("---")
+
 
             except requests.exceptions.RequestException as e:
                 st.error(f"APIサーバーへの接続に失敗しました。FastAPIサーバーが起動しているか確認してください。\n\n詳細: {e}")
