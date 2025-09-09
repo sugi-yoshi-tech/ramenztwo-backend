@@ -2,24 +2,40 @@ import os
 import instructor
 import uuid
 import time
+import httpx # httpxをインポート
+from typing import List, Optional
+
 from fastapi import FastAPI, HTTPException, Body
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 
 # models.pyから定義したデータ型をインポート
-from models import PressReleaseInput, PressReleaseAnalysisResponse, MediaHookType
+from models import (
+    PressReleaseInput, 
+    PressReleaseAnalysisResponse, 
+    MediaHookType,
+    Company,          # 追加
+    PressRelease      # 追加
+)
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4o") # 環境変数からモデル名を取得、なければgpt-4o
+MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 
-# instructorでOpenAIクライアントをパッチ
-# APIキーが設定されていない場合はエラーを出す
+# OpenAI APIキーのチェック
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OPENAI_API_KEY is not set in the environment variables.")
 
+# PR TIMES APIのアクセストークンとベースURLを設定
+PRTIMES_ACCESS_TOKEN = os.getenv("PRTIMES_ACCESS_TOKEN")
+if not PRTIMES_ACCESS_TOKEN:
+    raise ValueError("PRTIMES_ACCESS_TOKEN is not set in the environment variables.")
+PRTIMES_BASE_URL = "https://hackathon.stg-prtimes.net/api"
+
+
+# instructorでOpenAIクライアントをパッチ
 client = instructor.patch(AsyncOpenAI(api_key=api_key))
 
 # FastAPIアプリケーションのインスタンスを作成
@@ -29,18 +45,18 @@ app = FastAPI(
     version="3.0.0",
 )
 
-# CORSを許可するオリジン（Next.jsのURL）
+# CORSを許可するオリジン
 origins = [
-    "http://localhost:3000", # Next.jsの開発サーバー
-    # "https://your-production-site.com", # 本番環境のURLも必要に応じて追加
+    "http://localhost:3000",
+    "http://localhost:8501", # Streamlitのデフォルトポート
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], # すべてのHTTPメソッドを許可
-    allow_headers=["*"], # すべてのヘッダーを許可
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # 各メディアフックの日本語名と説明を定義
@@ -56,10 +72,84 @@ MEDIA_HOOK_DETAILS = {
     MediaHookType.VISUAL_IMPACT: {"ja": "画像・映像", "desc": "印象的で目を引くビジュアルがあるか"},
 }
 
+# ================================================================================
+# 新しく追加したPR TIMES APIのエンドポイント
+# ================================================================================
 
-@app.post("/analyze", response_model=PressReleaseAnalysisResponse)
+@app.get("/companies", response_model=List[Company], tags=["PR TIMES"])
+async def get_companies():
+    """
+    PR TIMESに登録されている企業の一覧を取得します。
+    """
+    url = f"{PRTIMES_BASE_URL}/companies"
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {PRTIMES_ACCESS_TOKEN}",
+    }
+    
+    async with httpx.AsyncClient() as http_client:
+        try:
+            res = await http_client.get(url, headers=headers)
+            res.raise_for_status()  # 4xx, 5xxエラーの場合は例外を発生させる
+            return res.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Failed to fetch data from PR TIMES API: {e.response.text}"
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/companies/{company_id}/releases", response_model=List[PressRelease], tags=["PR TIMES"])
+async def get_company_releases(
+    company_id: int,
+    # クエリパラメータとして日付を受け取れるようにする
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None
+):
+    """
+    指定された企業IDのプレスリリース一覧を取得します。
+    期間を指定することも可能です (例: ?from_date=2023-01-01&to_date=2023-12-31)
+    """
+    url = f"{PRTIMES_BASE_URL}/companies/{company_id}/releases"
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {PRTIMES_ACCESS_TOKEN}",
+    }
+    
+    # 日付パラメータを組み立てる
+    params = {}
+    if from_date:
+        params["from_date"] = from_date
+    if to_date:
+        params["to_date"] = to_date
+
+    async with httpx.AsyncClient() as http_client:
+        try:
+            # paramsをリクエストに追加
+            res = await http_client.get(url, headers=headers, params=params)
+            res.raise_for_status()
+            return res.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Company with ID {company_id} not found."
+                )
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Failed to fetch data from PR TIMES API: {e.response.text}"
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+# ================================================================================
+# 既存のプレスリリース分析エンドポイント
+# ================================================================================
+
+@app.post("/analyze", response_model=PressReleaseAnalysisResponse, tags=["Analysis"])
 async def analyze_press_release(
-    # Bodyから直接PressReleaseInputモデルを受け取る
     data: PressReleaseInput = Body(...)
 ):
     """
@@ -69,10 +159,8 @@ async def analyze_press_release(
     start_time = time.time()
 
     try:
-        # Markdown本文を段落に分割（空行で分割）
         paragraphs = [p.strip() for p in data.content_markdown.split('\n\n') if p.strip()]
         
-        # AIへの指示（プロンプト）を作成
         prompt = f"""
         # 指示
         あなたは日本の広報・PR分野におけるトップ専門家です。
@@ -110,13 +198,11 @@ async def analyze_press_release(
             temperature=0.2,
         )
 
-        # 処理時間と固定情報をレスポンスに追加
         end_time = time.time()
         analysis_result.request_id = request_id
         analysis_result.processing_time_ms = int((end_time - start_time) * 1000)
         analysis_result.ai_model_used = MODEL
         
-        # hook_name_jaを辞書から補完
         for eval_item in analysis_result.media_hook_evaluations:
             eval_item.hook_name_ja = MEDIA_HOOK_DETAILS[eval_item.hook_type]["ja"]
 

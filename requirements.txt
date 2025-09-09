@@ -1,0 +1,6 @@
+fastapi[all]
+openai
+python-dotenv
+instructor
+pydantic
+httpx

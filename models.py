@@ -144,3 +144,42 @@ class PressReleaseAnalysisResponse(BaseModel):
             missing = expected_hooks - hook_types
             raise ValueError(f"Missing evaluations for hooks: {', '.join(m.value for m in missing)}")
         return v
+
+# ================================================================================
+# PR TIMES API Response Models
+# ================================================================================
+
+class Company(BaseModel):
+    """PR TIMES APIから取得する企業情報"""
+    company_id: int
+    company_name: str
+    president_name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    description: Optional[str] = None
+    industry: Optional[str] = None
+    ipo_type: Optional[str] = None
+    capital: Optional[int] = None
+    foundation_date: Optional[str] = None
+    url: Optional[str] = None # HttpUrlの代わりにstrを使用
+    twitter_screen_name: Optional[str] = None
+
+class PressRelease(BaseModel):
+    """PR TIMES APIから取得するプレスリリース情報"""
+    company_name: str
+    company_id: int
+    release_id: int
+    title: str
+    subtitle: Optional[str] = None
+    url: str
+    lead_paragraph: Optional[str] = None
+    body: Optional[str] = None
+    main_image: Optional[str] = None
+    main_image_fastly: Optional[str] = None
+    main_category_id: Optional[int] = None
+    main_category_name: Optional[str] = None
+    sub_category_id: Optional[int] = None
+    sub_category_name: Optional[str] = None
+    release_type: Optional[str] = None
+    created_at: str
+    like: Optional[int] = None
