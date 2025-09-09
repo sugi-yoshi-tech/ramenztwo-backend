@@ -70,12 +70,18 @@ class ImageData(BaseModel):
         }
 
 
+class MetadataInput(BaseModel):
+    """メタデータ（ペルソナ情報）"""
+    persona: str = Field("指定なし", description="ターゲットペルソナ")
+
+
 class PressReleaseInput(BaseModel):
     """プレスリリース入力データ"""
     title: str = Field(..., min_length=1, max_length=200, description="記事のタイトル")
     top_image: Optional[ImageData] = Field(None, description="トップ画像")
     content_markdown: str = Field(..., min_length=1, description="プレスリリース本文（Markdown形式）")
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="追加メタデータ (例: ターゲットペルソナ)")
+    # metadataの型を汎用的なDictから専用のMetadataInputモデルに変更
+    metadata: MetadataInput
 
 
 # ================================================================================
