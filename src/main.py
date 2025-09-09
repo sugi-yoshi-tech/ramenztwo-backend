@@ -1,23 +1,20 @@
-import base64
 # main.py
 
+import base64
 import os
 import time
 import uuid
-import time
-import httpx
-import base64
+from datetime import datetime
 from typing import List, Optional
-from bs4 import BeautifulSoup
 
 import httpx
 import instructor
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from openai import AsyncOpenAI
+from openai import APIError, AsyncOpenAI
 
-# models.pyのインポートパスを修正 (環境に合わせて調整してください)
 from .models import (
     Company,
     MediaHookType,
@@ -26,11 +23,9 @@ from .models import (
     PressReleaseInput,
 )
 
-# .envファイルから環境変数を読み込む
 load_dotenv()
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 
-# APIキーのチェック
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OPENAI_API_KEY is not set in the environment variables.")
@@ -40,15 +35,12 @@ if not PRTIMES_ACCESS_TOKEN:
     raise ValueError("PRTIMES_ACCESS_TOKEN is not set in the environment variables.")
 PRTIMES_BASE_URL = "https://hackathon.stg-prtimes.net/api"
 
-
-# FastAPIアプリケーションのインスタンスを作成
 app = FastAPI(
     title="Press Release Analysis API",
     description="データ型定義に基づき、プレスリリースをメディアフックの観点から分析し、改善点を提案する",
-    version="3.2.0",  # バージョンアップ
+    version="3.2.0",
 )
 
-# CORS設定
 origins = ["http://localhost:3000", "http://localhost:8501"]
 app.add_middleware(
     CORSMiddleware,
@@ -58,7 +50,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# メディアフック詳細 (変更なし)
 MEDIA_HOOK_DETAILS = {
     MediaHookType.TRENDING_SEASONAL: {
         "ja": "時流・季節性",
@@ -96,7 +87,6 @@ MEDIA_HOOK_DETAILS = {
 }
 
 
-# --- PR TIMES API エンドポイント ---
 @app.get("/companies", response_model=List[Company], tags=["PR TIMES"])
 async def get_companies():
     url = f"{PRTIMES_BASE_URL}/companies"
@@ -154,27 +144,19 @@ async def get_company_releases(
             raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- プレスリリース分析エンドポイント  ---
 @app.post("/analyze", response_model=PressReleaseAnalysisResponse, tags=["Analysis"])
 async def analyze_press_release(data: PressReleaseInput = Body(...)):
     request_id = f"req_{uuid.uuid4()}"
     start_time = time.time()
 
     try:
-        # OpenAIクライアントを準備
         client = instructor.patch(AsyncOpenAI(api_key=api_key))
 
-        # --- プロンプトとメッセージの準備 ---
+        # HTMLをパースしてプレーンテキストに変換
+        soup = BeautifulSoup(data.content_html, "html.parser")
+        plain_text_content = soup.get_text(separator="\n\n", strip=True)
 
-        # 1. 本文を段落に分割し、AIが認識しやすいように番号付けする
-        # HTMLをパースして、構造を維持したままプレーンテキストに変換する
-        soup = BeautifulSoup(data.content_html, 'html.parser')
-        plain_text_content = soup.get_text(separator='\n\n', strip=True)
-
-        # 1. 変換後のテキストを段落に分割し、AIが認識しやすいように番号付けする
-        paragraphs = [
-            p.strip() for p in plain_text_content.split("\n\n") if p.strip()
-        ]
+        paragraphs = [p.strip() for p in plain_text_content.split("\n\n") if p.strip()]
         formatted_content = ""
         if not paragraphs:
             formatted_content = "本文がありません。"
@@ -183,7 +165,6 @@ async def analyze_press_release(data: PressReleaseInput = Body(...)):
                 [f"--- 段落 {i} ---\n{p}" for i, p in enumerate(paragraphs)]
             )
 
-        # --- OpenAIに渡すメッセージを作成 ---
         text_prompt = f"""
         # 指示
         あなたは日本の広報・PR分野におけるトップ専門家です。
@@ -197,33 +178,41 @@ async def analyze_press_release(data: PressReleaseInput = Body(...)):
         ## 本文（{len(paragraphs)}段落）: 
         {formatted_content}
         """
-        user_content = [{"type": "text", "text": text_prompt}]
+        user_content: List[dict] = [{"type": "text", "text": text_prompt}]
 
-        # --- 画像部分の処理 ---
         if data.top_image and data.top_image.url:
             try:
                 async with httpx.AsyncClient() as http_client:
-                    response = await http_client.get(data.top_image.url, timeout=20) # タイムアウトを少し延長
+                    response = await http_client.get(data.top_image.url, timeout=20)
                     response.raise_for_status()
-                    
+
                     image_bytes = await response.aread()
-                    base64_image = base64.b64encode(image_bytes).decode('utf-8')
-                    mime_type = response.headers.get('Content-Type', 'image/jpeg')
-                    
-                    user_content.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}
-                    })
+                    base64_image = base64.b64encode(image_bytes).decode("utf-8")
+                    mime_type = response.headers.get("Content-Type", "image/jpeg")
+
+                    user_content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}"
+                            },
+                        }
+                    )
             except httpx.HTTPStatusError as img_e:
                 error_message = f"\n## トップ画像\n- 画像の取得に失敗しました (ステータスコード: {img_e.response.status_code})。"
-                print(f"Image download failed (HTTP Status): {img_e.response.status_code} for url {data.top_image.url}")
+                print(
+                    f"Image download failed (HTTP Status): {img_e.response.status_code} for url {data.top_image.url}"
+                )
                 user_content[0]["text"] += error_message
             except httpx.RequestError as img_e:
-                error_message = f"\n## トップ画像\n- 画像の取得に失敗しました (接続エラー)。"
-                print(f"Image download failed (Request Error): {img_e} for url {data.top_image.url}")
+                error_message = (
+                    "\n## トップ画像\n- 画像の取得に失敗しました (接続エラー)。"
+                )
+                print(
+                    f"Image download failed (Request Error): {img_e} for url {data.top_image.url}"
+                )
                 user_content[0]["text"] += error_message
 
-        # --- AIによる分析実行 ---
         analysis_result = await client.chat.completions.create(
             model=MODEL,
             response_model=PressReleaseAnalysisResponse,
@@ -234,22 +223,33 @@ async def analyze_press_release(data: PressReleaseInput = Body(...)):
         )
 
         end_time = time.time()
+
+        # フロントエンドの型に合わせてレスポンスを調整
         analysis_result.request_id = request_id
+        analysis_result.analyzed_at = datetime.now().isoformat()
         analysis_result.processing_time_ms = int((end_time - start_time) * 1000)
         analysis_result.ai_model_used = MODEL
 
-        # レスポンスにメディアフックの日本語名を追加
         for eval_item in analysis_result.media_hook_evaluations:
-            eval_item.hook_name_ja = MEDIA_HOOK_DETAILS[eval_item.hook_type]["ja"]
+            eval_item.hook_name_ja = MEDIA_HOOK_DETAILS[
+                MediaHookType(eval_item.hook_type)
+            ]["ja"]
 
         return analysis_result
 
     except APIError as e:
-        # OpenAI APIからのエラーを個別に捕捉
         print(f"OpenAI API Error for request_id {request_id}: {e}")
-        raise HTTPException(status_code=502, detail={"error": {"code": "AI_SERVICE_ERROR", "message": f"AI service returned an error: {e.message}"}, "request_id": request_id})
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": {
+                    "code": "AI_SERVICE_ERROR",
+                    "message": f"AI service returned an error: {str(e)}",
+                },
+                "request_id": request_id,
+            },
+        )
     except Exception as e:
-        # その他の予期せぬエラー
         print(f"Error during analysis for request_id {request_id}: {e}")
         raise HTTPException(
             status_code=500,
