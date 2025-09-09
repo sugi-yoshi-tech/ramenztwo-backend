@@ -1,192 +1,107 @@
-# ramenztwo-frontend
+# 🤖 プレスリリース改善AI アナライザー
 
-PRTimes Hackathon Summer
+AIを活用してプレスリリースをメディアの視点から分析し、具体的な改善点を提案するWebアプリケーションです。
 
-プレスリリース改善 AI (Press Release Analysis AI)
+PR TIMESの記事を直接インポートし、「メディアフック」と呼ばれる9つの観点から評価。総合評価や段落ごとの改善案を提示することで、より多くのメディアに注目されるプレスリリースの作成を支援します。
 
-## 概要
+![AI robot analyzing documents](https://via.placeholder.com/700x300.png?text=Press+Release+AI+Analyzer)
 
-このプロジェクトは、プレスリリースの内容をメディアフックの観点から AI が分析し、具体的な改善点を提案する FastAPI アプリケーションと、その API を利用するための Streamlit 製 Web UI を提供します。
+## ✨ 主な機能
 
-入力されたプレスリリースのタイトルと本文を基に、9 つのメディアフック要素を 5 段階で評価し、全体および段落ごとの改善案を構造化された JSON 形式で返却します。これにより、広報担当者はよりメディアの目に留まりやすい、訴求力の高いプレスリリースを作成できます。
-
-### 主な機能 ✨
-
-メディアフック 9 要素の定量的評価: 各要素を 1〜5 のスコアで評価し、客観的な分析を提供します。
-
-段落ごとの具体的改善案: 本文の各段落に対し、改善後のテキスト案や改善点を提案します。
-
-全体サマリー: プレスリリース全体の強み・弱み、総合スコア、最優先の改善点を提示します。
-
-対話的な Web UI: Streamlit 製の UI で、手軽に分析を実行し、結果を視覚的に確認できます。
-
-厳密な型定義: Pydantic による厳密な入出力の型定義により、安定した API レスポンスを保証します。
-
-AI による高精度分析: instructor ライブラリと OpenAI の LLM を活用し、高品質な分析結果を生成します。
-
-### 技術スタック
-
-フレームワーク: FastAPI, Streamlit
-
-データ検証: Pydantic
-
-LLM 連携: Instructor, OpenAI
-
-サーバー: Uvicorn
+* **PR TIMES連携**: 企業IDを指定して、公開済みのプレスリリースを期間を指定して直接インポートできます。
+* **AIによる多角的な分析**: OpenAIの最新モデル (`gpt-4o`) を活用し、プレスリリースを9つのメディアフックの観点から5段階で評価します。
+* **段落ごとの具体的な改善提案**: 元の文章と改善案を並べて表示し、どこをどう直せば良いかが一目でわかります。改善の優先度も提示します。
+* **総合評価とサマリー**: 全体のスコア、強み、弱み、そして最も優先すべき改善点をまとめて提示し、改善の方向性を明確にします。
+* **画像分析**: プレスリリースのトップ画像をAIが直接評価し、ビジュアル面でのインパクトも分析対象とします。
 
 ---
 
-## 必要環境
+## 🛠️ 技術スタック
 
-- [uv](https://github.com/astral-sh/uv)（依存関係管理・仮想環境の作成に使用）
-- OpenAI API キー
+* **バックエンド**: FastAPI, Pydantic, Uvicorn
+* **フロントエンド**: Streamlit
+* **AI**: OpenAI (Instructorライブラリ経由)
+* **言語**: Python 3.9+
+* **主要ライブラリ**: `requests`, `httpx`, `python-dotenv`
 
-## セットアップ手順 🚀
+---
 
-### 1. リポジトリをクローン
+## 🚀 セットアップと実行方法
 
-```bash
-git clone https://github.com/sugi-yoshi-tech/ramenztwo-backend.git
-cd ramenztwo-backend
-```
+### 1. 前提条件
 
-### 2. 依存関係のインストール
+* Python 3.9以降がインストールされていること
+* [Poetry](https://python-poetry.org/) または `pip` によるパッケージ管理
+* OpenAI APIキー
+* PR TIMES ハッカソンAPI アクセストークン
 
-```bash
-uv sync
-```
+### 2. インストール
 
-### 3. 仮想環境に入る
+1.  **リポジトリをクローンします**:
+    ```bash
+    git clone [https://github.com/your-repository/press-release-analyzer.git](https://github.com/your-repository/press-release-analyzer.git)
+    cd press-release-analyzer
+    ```
 
-Mac, Linux:
+2.  **必要なライブラリをインストールします**:
+    ```bash
+    pip install -r requirements.txt
+    # または Poetry を使用する場合
+    # poetry install
+    ```
 
-```bash
-source .venv/bin/activate
-```
+3.  **環境変数を設定します**:
+    プロジェクトのルートディレクトリに `.env` ファイルを作成し、以下の内容を記述してください。
 
-Windows:
+    ```.env
+    OPENAI_API_KEY="sk-..."
+    OPENAI_MODEL="gpt-4o"
+    PRTIMES_ACCESS_TOKEN="..."
+    ```
 
-```bash
-.venv\Scripts\activate
-```
+### 3. アプリケーションの実行
 
-### 4. 環境変数を設定する
+このアプリケーションは、**バックエンドAPI (FastAPI)** と **フロントエンド (Streamlit)** の2つのコンポーネントで構成されています。それぞれを別のターミナルで起動する必要があります。
 
-```bash
-cp ./.env.sample ./.env
-```
+1.  **【ターミナル1】バックエンドAPIを起動**:
+    ```bash
+    uvicorn main:app --reload --port 8000
+    ```
+    APIサーバーが `http://127.0.0.1:8000` で起動します。
 
-コピー後、以下のように環境変数を設定してください。
+2.  **【ターミナル2】フロントエンドを起動**:
+    ```bash
+    streamlit run app_streamlit.py
+    ```
+    Webブラウザで `http://localhost:8501` が自動的に開かれ、アプリケーションのUIが表示されます。
 
-```bash
-OPENAI_API_KEY="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-```
+---
 
-### 5. サーバーの起動
+## 📖 使い方
 
-```bash
-uvicorn main:app --reload
-```
+1.  **企業一覧を読み込む**: サイドバーの指示に従い、まずはAPIサーバーを起動してください。その後、「企業一覧を読み込む」ボタンを押して、PR TIMESに登録されている企業リストを取得します。
+2.  **企業と記事を選択**: 分析したい企業をドロップダウンから選択し、記事の検索期間を指定します。該当するプレスリリースが一覧表示されるので、分析したい記事を選択します。
+3.  **記事内容の確認・編集**: 選択した記事のタイトル、本文、画像URLが自動でフォームにセットされます。必要に応じて内容を編集します。ターゲットペルソナも指定できます。
+4.  **分析を実行**: 「分析を実行 →」ボタンを押すと、AIによる分析が開始されます（数十秒かかる場合があります）。
+5.  **結果の確認**: 分析が完了すると、以下の3つの観点から結果が表示されます。
+    * **全体評価サマリー**: 総合スコアや強み・弱みなど。
+    * **メディアフック評価**: 9つのフックごとの評価スコアと改善例。
+    * **段落ごとの改善提案**: 具体的な文章の修正案。
 
-サーバーが起動すると、ターミナルに Uvicorn running on <http://127.0.0.1:8000> と表示されます。
+---
 
-### 6. API ドキュメントの確認
-
-```bash
-streamlit run app_streamlit.py
-```
-
-自動的にブラウザが開き、<http://localhost:8501> で操作画面が表示されます。
-
-## API 仕様
-
-### エンドポイント: POST /analyze
-
-プレスリリースを分析し、改善案を返します。
-
-リクエストボディ
-application/json 形式で以下のデータを送信します。
-
-```JSON
-{
-  "title": "当社、革新的な新サービス「AI コンシェルジュ」を発表",
-  "top_image": {
-    "url": "https://example.com/images/ai-concierge.jpg",
-    "alt_text": "AI コンシェルジュのイメージ画像"
-  },
-  "content_markdown": "本日、株式会社サンプルは、顧客対応を自動化する画期的な新サービス「AI コンシェルジュ」の提供を開始したことを発表します。\n\n このサービスは、最新の自然言語処理技術を活用しており、24 時間 365 日、人間のような自然な対話で問い合わせに応じます。初期費用は無料で、月額 5 万円から利用可能です。",
-  "metadata": {
-    "persona": "中小企業のカスタマーサポート部門長"
-  }
-}
-```
-
-レスポンス
-分析結果が PressReleaseAnalysisResponse モデルに基づいた JSON 形式で返されます。（models.py の定義に準拠）
-
-```JSON
-{
-  "request_id": "req_a1b2c3d4-...",
-  "analyzed_at": "2025-09-08T09:30:00.123Z",
-  "media_hook_evaluations": [
-    {
-      "hook_type": "novelty_uniqueness",
-      "hook_name_ja": "新規性・独自性",
-      "score": 4,
-      "description": "「画期的な新サービス」という表現で新規性を訴求できているが、他社との具体的な違いが不明確。",
-      "improve_examples": [
-        "「業界初」「特許取得済み」などのキーワードを追加する"
-      ],
-      "current_elements": [
-        "画期的な新サービス",
-        "最新の自然言語処理技術"
-      ]
-    }
-    // ... 他 8 つのメディアフック評価
-  ],
-  "paragraph_improvements": [
-    {
-      "paragraph_index": 0,
-      "original_text": "本日、株式会社サンプルは、顧客対応を自動化する画期的な新サービス「AI コンシェルジュ」の提供を開始したことを発表します。",
-      "improved_text": "株式会社サンプルは本日 9 月 8 日、AI が顧客対応を完全自動化する、業界初の SaaS 型サービス「AI コンシェルジュ」の提供を開始します。",
-      "improvements": [
-        "具体的な日付を追加",
-        "「業界初」で新規性を強調",
-        "SaaS 型サービスであることを明記"
-      ],
-      "priority": "high",
-      "applicable_hooks": [
-        "novelty_uniqueness",
-        "trending_seasonal"
-      ]
-    }
-    // ... 他の段落の改善提案
-  ],
-  "overall_assessment": {
-    "total_score": 3.2,
-    "strengths": [
-      "サービス内容が明確"
-    ],
-    "weaknesses": [
-      "社会性や意外性の要素が不足",
-      "具体的な導入効果のデータがない"
-    ],
-    "top_recommendations": [
-      "導入事例や具体的な数値をタイトルに追加する",
-      "社会的な課題（例：人手不足）と関連付ける"
-    ],
-    "estimated_impact": "見出しのクリック率が 20%向上し、メディアからの問い合わせが増加する可能性。"
-  },
-  "processing_time_ms": 4580,
-  "ai_model_used": "gpt-4o"
-}
-```
-
-ファイル構成
+## 📁 プロジェクト構成
 .
-├── .env # 環境変数ファイル（API キーなどを格納）
-├── main.py # FastAPI アプリケーション本体
-├── models.py # Pydantic による API のデータモデル定義
-├── app_streamlit.py # Streamlit 製のフロントエンド UI
-├── requirements.txt # プロジェクトの依存ライブラリ
-└── README.md # このファイル
+├── .env              # 環境変数ファイル（各自で作成）
+├── main.py           # FastAPIバックエンドアプリケーション
+├── app_streamlit.py  # Streamlitフロントエンドアプリケーション
+├── models.py         # Pydanticデータモデル定義
+└── requirements.txt  # 必要なPythonライブラリ
+
+### APIエンドポイント
+
+* `GET /companies`: PR TIMESに登録されている企業の一覧を取得します。
+* `GET /companies/{company_id}/releases`: 指定された企業のプレスリリース一覧を期間指定で取得します。
+* `POST /analyze`: プレスリリースの内容を送信し、AIによる分析結果をJSON形式で受け取ります。
+
+---
