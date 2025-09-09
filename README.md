@@ -1,115 +1,130 @@
-プレスリリース改善AI (Press Release Analysis AI)
+# ramenztwo-frontend
 
-概要
-このプロジェクトは、プレスリリースの内容をメディアフックの観点からAIが分析し、具体的な改善点を提案するFastAPIアプリケーションと、そのAPIを利用するためのStreamlit製Web UIを提供します。
+PRTimes Hackathon Summer
 
-入力されたプレスリリースのタイトルと本文を基に、9つのメディアフック要素を5段階で評価し、全体および段落ごとの改善案を構造化されたJSON形式で返却します。これにより、広報担当者はよりメディアの目に留まりやすい、訴求力の高いプレスリリースを作成できます。
+プレスリリース改善 AI (Press Release Analysis AI)
 
-主な機能 ✨
-メディアフック9要素の定量的評価: 各要素を1〜5のスコアで評価し、客観的な分析を提供します。
+## 概要
+
+このプロジェクトは、プレスリリースの内容をメディアフックの観点から AI が分析し、具体的な改善点を提案する FastAPI アプリケーションと、その API を利用するための Streamlit 製 Web UI を提供します。
+
+入力されたプレスリリースのタイトルと本文を基に、9 つのメディアフック要素を 5 段階で評価し、全体および段落ごとの改善案を構造化された JSON 形式で返却します。これにより、広報担当者はよりメディアの目に留まりやすい、訴求力の高いプレスリリースを作成できます。
+
+### 主な機能 ✨
+
+メディアフック 9 要素の定量的評価: 各要素を 1〜5 のスコアで評価し、客観的な分析を提供します。
 
 段落ごとの具体的改善案: 本文の各段落に対し、改善後のテキスト案や改善点を提案します。
 
 全体サマリー: プレスリリース全体の強み・弱み、総合スコア、最優先の改善点を提示します。
 
-対話的なWeb UI: Streamlit製のUIで、手軽に分析を実行し、結果を視覚的に確認できます。
+対話的な Web UI: Streamlit 製の UI で、手軽に分析を実行し、結果を視覚的に確認できます。
 
-厳密な型定義: Pydanticによる厳密な入出力の型定義により、安定したAPIレスポンスを保証します。
+厳密な型定義: Pydantic による厳密な入出力の型定義により、安定した API レスポンスを保証します。
 
-AIによる高精度分析: instructorライブラリとOpenAIのLLMを活用し、高品質な分析結果を生成します。
+AI による高精度分析: instructor ライブラリと OpenAI の LLM を活用し、高品質な分析結果を生成します。
 
-技術スタック
+### 技術スタック
+
 フレームワーク: FastAPI, Streamlit
 
 データ検証: Pydantic
 
-LLM連携: Instructor, OpenAI
+LLM 連携: Instructor, OpenAI
 
 サーバー: Uvicorn
 
-セットアップ手順 🚀
-1. 前提条件
-Python 3.9以上
+---
 
-pip (Pythonのパッケージ管理ツール)
+## 必要環境
 
-OpenAI APIキー
+- [uv](https://github.com/astral-sh/uv)（依存関係管理・仮想環境の作成に使用）
+- OpenAI API キー
 
-2. リポジトリのクローン
-Bash
+## セットアップ手順 🚀
 
-git clone https://github.com/your-username/press-release-analyzer.git
-cd press-release-analyzer
-3. 依存関係のインストール
-プロジェクトルートに requirements.txt という名前のファイルを作成し、以下の内容を記述します。
+### 1. リポジトリをクローン
 
-requirements.txt:
+```bash
+git clone https://github.com/sugi-yoshi-tech/ramenztwo-backend.git
+cd ramenztwo-backend
+```
 
-Plaintext
+### 2. 依存関係のインストール
 
-fastapi[all]
-streamlit
-openai
-python-dotenv
-instructor>=1.0.0
-requests
-その後、以下のコマンドを実行してライブラリをインストールします。
+```bash
+uv sync
+```
 
-Bash
+### 3. 仮想環境に入る
 
-pip install -r requirements.txt
-4. 環境変数の設定
-プロジェクトルートに .env という名前のファイルを作成し、以下のようにOpenAIのAPIキーを記述します。
+Mac, Linux:
 
-.env:
+```bash
+source .venv/bin/activate
+```
 
-# .env
+Windows:
+
+```bash
+.venv\Scripts\activate
+```
+
+### 4. 環境変数を設定する
+
+```bash
+cp ./.env.sample ./.env
+```
+
+コピー後、以下のように環境変数を設定してください。
+
+```bash
 OPENAI_API_KEY="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-OPENAI_MODEL="gpt-4o" # (オプション) 使用するモデルを指定
-実行方法
-このアプリケーションは、バックエンド (FastAPI) と フロントエンド (Streamlit) の2つのプロセスを起動する必要があります。それぞれ別のターミナルで実行してください。
+```
 
-1. バックエンドサーバーの起動
-以下のコマンドでAPIサーバーを起動します。--reloadフラグにより、コードの変更が即座に反映されます。
+### 5. サーバーの起動
 
-Bash
-
+```bash
 uvicorn main:app --reload
-サーバーが起動すると、ターミナルに Uvicorn running on http://127.0.0.1:8000 と表示されます。
+```
 
-2. フロントエンドUIの起動
-別のターミナルを開き、以下のコマンドでStreamlitアプリケーションを起動します。
+サーバーが起動すると、ターミナルに Uvicorn running on <http://127.0.0.1:8000> と表示されます。
 
-Bash
+### 6. API ドキュメントの確認
 
+```bash
 streamlit run app_streamlit.py
-自動的にブラウザが開き、http://localhost:8501 で操作画面が表示されます。
+```
 
-API仕様
-エンドポイント: POST /analyze
+自動的にブラウザが開き、<http://localhost:8501> で操作画面が表示されます。
+
+## API 仕様
+
+### エンドポイント: POST /analyze
+
 プレスリリースを分析し、改善案を返します。
 
 リクエストボディ
-application/json形式で以下のデータを送信します。
+application/json 形式で以下のデータを送信します。
 
-JSON
-
+```JSON
 {
-  "title": "当社、革新的な新サービス「AIコンシェルジュ」を発表",
+  "title": "当社、革新的な新サービス「AI コンシェルジュ」を発表",
   "top_image": {
     "url": "https://example.com/images/ai-concierge.jpg",
-    "alt_text": "AIコンシェルジュのイメージ画像"
+    "alt_text": "AI コンシェルジュのイメージ画像"
   },
-  "content_markdown": "本日、株式会社サンプルは、顧客対応を自動化する画期的な新サービス「AIコンシェルジュ」の提供を開始したことを発表します。\n\nこのサービスは、最新の自然言語処理技術を活用しており、24時間365日、人間のような自然な対話で問い合わせに応じます。初期費用は無料で、月額5万円から利用可能です。",
+  "content_markdown": "本日、株式会社サンプルは、顧客対応を自動化する画期的な新サービス「AI コンシェルジュ」の提供を開始したことを発表します。\n\n このサービスは、最新の自然言語処理技術を活用しており、24 時間 365 日、人間のような自然な対話で問い合わせに応じます。初期費用は無料で、月額 5 万円から利用可能です。",
   "metadata": {
     "persona": "中小企業のカスタマーサポート部門長"
   }
 }
+```
+
 レスポンス
-分析結果が PressReleaseAnalysisResponse モデルに基づいたJSON形式で返されます。（models.pyの定義に準拠）
+分析結果が PressReleaseAnalysisResponse モデルに基づいた JSON 形式で返されます。（models.py の定義に準拠）
 
-JSON
-
+```JSON
 {
   "request_id": "req_a1b2c3d4-...",
   "analyzed_at": "2025-09-08T09:30:00.123Z",
@@ -119,37 +134,59 @@ JSON
       "hook_name_ja": "新規性・独自性",
       "score": 4,
       "description": "「画期的な新サービス」という表現で新規性を訴求できているが、他社との具体的な違いが不明確。",
-      "improve_examples": ["「業界初」「特許取得済み」などのキーワードを追加する"],
-      "current_elements": ["画期的な新サービス", "最新の自然言語処理技術"]
+      "improve_examples": [
+        "「業界初」「特許取得済み」などのキーワードを追加する"
+      ],
+      "current_elements": [
+        "画期的な新サービス",
+        "最新の自然言語処理技術"
+      ]
     }
-    // ... 他8つのメディアフック評価
+    // ... 他 8 つのメディアフック評価
   ],
   "paragraph_improvements": [
     {
       "paragraph_index": 0,
-      "original_text": "本日、株式会社サンプルは、顧客対応を自動化する画期的な新サービス「AIコンシェルジュ」の提供を開始したことを発表します。",
-      "improved_text": "株式会社サンプルは本日9月8日、AIが顧客対応を完全自動化する、業界初のSaaS型サービス「AIコンシェルジュ」の提供を開始します。",
-      "improvements": ["具体的な日付を追加", "「業界初」で新規性を強調", "SaaS型サービスであることを明記"],
+      "original_text": "本日、株式会社サンプルは、顧客対応を自動化する画期的な新サービス「AI コンシェルジュ」の提供を開始したことを発表します。",
+      "improved_text": "株式会社サンプルは本日 9 月 8 日、AI が顧客対応を完全自動化する、業界初の SaaS 型サービス「AI コンシェルジュ」の提供を開始します。",
+      "improvements": [
+        "具体的な日付を追加",
+        "「業界初」で新規性を強調",
+        "SaaS 型サービスであることを明記"
+      ],
       "priority": "high",
-      "applicable_hooks": ["novelty_uniqueness", "trending_seasonal"]
+      "applicable_hooks": [
+        "novelty_uniqueness",
+        "trending_seasonal"
+      ]
     }
     // ... 他の段落の改善提案
   ],
   "overall_assessment": {
     "total_score": 3.2,
-    "strengths": ["サービス内容が明確"],
-    "weaknesses": ["社会性や意外性の要素が不足", "具体的な導入効果のデータがない"],
-    "top_recommendations": ["導入事例や具体的な数値をタイトルに追加する", "社会的な課題（例：人手不足）と関連付ける"],
-    "estimated_impact": "見出しのクリック率が20%向上し、メディアからの問い合わせが増加する可能性。"
+    "strengths": [
+      "サービス内容が明確"
+    ],
+    "weaknesses": [
+      "社会性や意外性の要素が不足",
+      "具体的な導入効果のデータがない"
+    ],
+    "top_recommendations": [
+      "導入事例や具体的な数値をタイトルに追加する",
+      "社会的な課題（例：人手不足）と関連付ける"
+    ],
+    "estimated_impact": "見出しのクリック率が 20%向上し、メディアからの問い合わせが増加する可能性。"
   },
   "processing_time_ms": 4580,
   "ai_model_used": "gpt-4o"
 }
+```
+
 ファイル構成
 .
-├── .env                  # 環境変数ファイル（APIキーなどを格納）
-├── main.py               # FastAPIアプリケーション本体
-├── models.py             # PydanticによるAPIのデータモデル定義
-├── app_streamlit.py      # Streamlit製のフロントエンドUI
-├── requirements.txt      # プロジェクトの依存ライブラリ
-└── README.md             # このファイル
+├── .env # 環境変数ファイル（API キーなどを格納）
+├── main.py # FastAPI アプリケーション本体
+├── models.py # Pydantic による API のデータモデル定義
+├── app_streamlit.py # Streamlit 製のフロントエンド UI
+├── requirements.txt # プロジェクトの依存ライブラリ
+└── README.md # このファイル
