@@ -1,25 +1,28 @@
+import base64
 # main.py
 
 import os
-import instructor
+import time
 import uuid
 import time
 import httpx
 import base64
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Body
-from openai import AsyncOpenAI, APIError
+import httpx
+import instructor
 from dotenv import load_dotenv
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from openai import AsyncOpenAI
 
 # models.pyのインポートパスを修正 (環境に合わせて調整してください)
 from .models import (
-    PressReleaseInput, 
-    PressReleaseAnalysisResponse, 
-    MediaHookType,
     Company,
-    PressRelease
+    MediaHookType,
+    PressRelease,
+    PressReleaseAnalysisResponse,
+    PressReleaseInput,
 )
 
 # .envファイルから環境変数を読み込む
@@ -36,15 +39,12 @@ if not PRTIMES_ACCESS_TOKEN:
     raise ValueError("PRTIMES_ACCESS_TOKEN is not set in the environment variables.")
 PRTIMES_BASE_URL = "https://hackathon.stg-prtimes.net/api"
 
-# 【修正点】OpenAIクライアントをアプリケーション起動時に一度だけ初期化
-# これにより、リクエストごとのオーバーヘッドを削減します
-client = instructor.patch(AsyncOpenAI(api_key=api_key))
 
 # FastAPIアプリケーションのインスタンスを作成
 app = FastAPI(
     title="Press Release Analysis API",
     description="データ型定義に基づき、プレスリリースをメディアフックの観点から分析し、改善点を提案する",
-    version="3.2.0", # バージョンアップ
+    version="3.2.0",  # バージョンアップ
 )
 
 # CORS設定
@@ -59,39 +59,82 @@ app.add_middleware(
 
 # メディアフック詳細 (変更なし)
 MEDIA_HOOK_DETAILS = {
-    MediaHookType.TRENDING_SEASONAL: {"ja": "時流・季節性", "desc": "社会のトレンドや季節イベントに関連しているか"},
-    MediaHookType.UNEXPECTEDNESS: {"ja": "意外性", "desc": "常識を覆すような驚きがあるか"},
-    MediaHookType.PARADOX_CONFLICT: {"ja": "逆説・対立", "desc": "一見矛盾する要素や対立構造があるか"},
+    MediaHookType.TRENDING_SEASONAL: {
+        "ja": "時流・季節性",
+        "desc": "社会のトレンドや季節イベントに関連しているか",
+    },
+    MediaHookType.UNEXPECTEDNESS: {
+        "ja": "意外性",
+        "desc": "常識を覆すような驚きがあるか",
+    },
+    MediaHookType.PARADOX_CONFLICT: {
+        "ja": "逆説・対立",
+        "desc": "一見矛盾する要素や対立構造があるか",
+    },
     MediaHookType.REGIONAL: {"ja": "地域性", "desc": "特定の地域に密着した情報か"},
-    MediaHookType.TOPICALITY: {"ja": "話題性", "desc": "現在話題の事柄と関連しているか"},
-    MediaHookType.SOCIAL_PUBLIC: {"ja": "社会性・公益性", "desc": "社会問題の解決など公共の利益に貢献するか"},
-    MediaHookType.NOVELTY_UNIQUENESS: {"ja": "新規性・独自性", "desc": "「日本初」や独自の技術など、他にはない要素があるか"},
-    MediaHookType.SUPERLATIVE_RARITY: {"ja": "最上級・希少性", "desc": "「No.1」や「限定」など、希少価値やインパクトがあるか"},
-    MediaHookType.VISUAL_IMPACT: {"ja": "画像・映像", "desc": "印象的で目を引くビジュアルがあるか"},
+    MediaHookType.TOPICALITY: {
+        "ja": "話題性",
+        "desc": "現在話題の事柄と関連しているか",
+    },
+    MediaHookType.SOCIAL_PUBLIC: {
+        "ja": "社会性・公益性",
+        "desc": "社会問題の解決など公共の利益に貢献するか",
+    },
+    MediaHookType.NOVELTY_UNIQUENESS: {
+        "ja": "新規性・独自性",
+        "desc": "「日本初」や独自の技術など、他にはない要素があるか",
+    },
+    MediaHookType.SUPERLATIVE_RARITY: {
+        "ja": "最上級・希少性",
+        "desc": "「No.1」や「限定」など、希少価値やインパクトがあるか",
+    },
+    MediaHookType.VISUAL_IMPACT: {
+        "ja": "画像・映像",
+        "desc": "印象的で目を引くビジュアルがあるか",
+    },
 }
+
 
 # --- PR TIMES API エンドポイント (変更なし) ---
 @app.get("/companies", response_model=List[Company], tags=["PR TIMES"])
 async def get_companies():
     url = f"{PRTIMES_BASE_URL}/companies"
-    headers = {"Accept": "application/json", "Authorization": f"Bearer {PRTIMES_ACCESS_TOKEN}"}
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {PRTIMES_ACCESS_TOKEN}",
+    }
     async with httpx.AsyncClient() as http_client:
         try:
             res = await http_client.get(url, headers=headers)
             res.raise_for_status()
             return res.json()
         except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail=f"Failed to fetch data from PR TIMES API: {e.response.text}")
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Failed to fetch data from PR TIMES API: {e.response.text}",
+            )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/companies/{company_id}/releases", response_model=List[PressRelease], tags=["PR TIMES"])
-async def get_company_releases(company_id: int, from_date: Optional[str] = None, to_date: Optional[str] = None):
+
+@app.get(
+    "/companies/{company_id}/releases",
+    response_model=List[PressRelease],
+    tags=["PR TIMES"],
+)
+async def get_company_releases(
+    company_id: int, from_date: Optional[str] = None, to_date: Optional[str] = None
+):
     url = f"{PRTIMES_BASE_URL}/companies/{company_id}/releases"
-    headers = {"Accept": "application/json", "Authorization": f"Bearer {PRTIMES_ACCESS_TOKEN}"}
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {PRTIMES_ACCESS_TOKEN}",
+    }
     params = {}
-    if from_date: params["from_date"] = from_date
-    if to_date: params["to_date"] = to_date
+    if from_date:
+        params["from_date"] = from_date
+    if to_date:
+        params["to_date"] = to_date
     async with httpx.AsyncClient() as http_client:
         try:
             res = await http_client.get(url, headers=headers, params=params)
@@ -99,22 +142,34 @@ async def get_company_releases(company_id: int, from_date: Optional[str] = None,
             return res.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise HTTPException(status_code=404, detail=f"Company with ID {company_id} not found.")
-            raise HTTPException(status_code=e.response.status_code, detail=f"Failed to fetch data from PR TIMES API: {e.response.text}")
+                raise HTTPException(
+                    status_code=404, detail=f"Company with ID {company_id} not found."
+                )
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Failed to fetch data from PR TIMES API: {e.response.text}",
+            )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-# --- プレスリリース分析エンドポイント (全体を修正) ---
+
+# --- プレスリリース分析エンドポイント (ロジックを修正・整理) ---
 @app.post("/analyze", response_model=PressReleaseAnalysisResponse, tags=["Analysis"])
 async def analyze_press_release(data: PressReleaseInput = Body(...)):
     request_id = f"req_{uuid.uuid4()}"
     start_time = time.time()
 
     try:
-        # 【修正点】paragraphsの定義を、使用する前に移動
-        paragraphs = [p.strip() for p in data.content_markdown.split('\n\n') if p.strip()]
+        # OpenAIクライアントを準備
+        client = instructor.patch(AsyncOpenAI(api_key=api_key))
 
-        # 【修正点】AIが認識しやすいように番号付けしたテキストを作成し、プロンプトで実際に使用する
+        # --- プロンプトとメッセージの準備 ---
+
+        # 1. 本文を段落に分割し、AIが認識しやすいように番号付けする
+        paragraphs = [
+            p.strip() for p in data.content_markdown.split("\n\n") if p.strip()
+        ]
+        formatted_content = ""
         if not paragraphs:
             formatted_content = "本文がありません。"
         else:
@@ -178,7 +233,8 @@ async def analyze_press_release(data: PressReleaseInput = Body(...)):
         analysis_result.request_id = request_id
         analysis_result.processing_time_ms = int((end_time - start_time) * 1000)
         analysis_result.ai_model_used = MODEL
-        
+
+        # レスポンスにメディアフックの日本語名を追加
         for eval_item in analysis_result.media_hook_evaluations:
             eval_item.hook_name_ja = MEDIA_HOOK_DETAILS[eval_item.hook_type]["ja"]
 
@@ -191,4 +247,13 @@ async def analyze_press_release(data: PressReleaseInput = Body(...)):
     except Exception as e:
         # その他の予期せぬエラー
         print(f"Error during analysis for request_id {request_id}: {e}")
-        raise HTTPException(status_code=500, detail={"error": {"code": "ANALYSIS_FAILED", "message": f"An unexpected error occurred: {str(e)}"}, "request_id": request_id})
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": {
+                    "code": "ANALYSIS_FAILED",
+                    "message": f"An unexpected error occurred: {str(e)}",
+                },
+                "request_id": request_id,
+            },
+        )
