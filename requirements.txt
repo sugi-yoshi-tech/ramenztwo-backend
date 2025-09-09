@@ -1,6 +1,12 @@
+# FastAPI and other app dependencies
 fastapi[all]
 openai
 python-dotenv
 instructor
 pydantic
 httpx
+beautifulsoup4
+
+# AWS CDK libraries
+aws-cdk-lib==2.147.3
+constructs>=10.0.0,<11.0.0
