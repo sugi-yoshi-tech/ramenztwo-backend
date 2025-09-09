@@ -49,12 +49,7 @@ class ImprovementPriority(str, Enum):
 
 
 class ImageData(BaseModel):
-    """
-    画像データ
-    【修正点】
-    - 使用していない `base64_data`, `mime_type`, `alt_text` フィールドを削除
-    - `base64_data` に紐づく不要な `field_validator` を削除
-    """
+    """画像データ"""
     url: Optional[str] = Field(None, description="画像URL")
 
     class Config:
@@ -74,14 +69,19 @@ class PressReleaseInput(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=200, description="記事のタイトル")
     top_image: Optional[ImageData] = Field(None, description="トップ画像")
-    content_markdown: str = Field(
-        ..., min_length=1, description="プレスリリース本文（Markdown形式）"
+    content_html: str = Field(
+        ..., min_length=1, description="プレスリリース本文（HTML形式）"
     )
     metadata: MetadataInput
 
 # ================================================================================
 # Response Models (出力データ)
 # ================================================================================
+
+class IdentifiableString(BaseModel):
+    """ID（インデックス）を持つ文字列オブジェクト"""
+    id: int = Field(..., description="リスト内のインデックス（0から開始）")
+    content: str = Field(..., description="テキストコンテンツ")
 
 
 class MediaHookEvaluation(BaseModel):
@@ -91,19 +91,19 @@ class MediaHookEvaluation(BaseModel):
     hook_name_ja: str = Field(..., description="メディアフック名（日本語）")
     score: EvaluationScore = Field(..., description="5段階評価スコア")
     description: str = Field(..., description="評価の説明")
-    improve_examples: List[str] = Field(default_factory=list, description="改善例")
-    current_elements: List[str] = Field(default_factory=list, description="現在含まれている要素")
+    improve_examples: List[IdentifiableString] = Field(default_factory=list, description="改善例")
+    current_elements: List[IdentifiableString] = Field(default_factory=list, description="現在含まれている要素")
 
 
 class ParagraphImprovement(BaseModel):
     """段落ごとの改善提案"""
-
-    paragraph_index: int = Field(
+    
+    id: int = Field(
         ..., ge=0, description="段落のインデックス（0から開始）"
     )
     original_text: str = Field(..., description="元のテキスト")
     improved_text: Optional[str] = Field(None, description="改善後のテキスト案")
-    improvements: List[str] = Field(default_factory=list, description="改善点のリスト")
+    improvements: List[IdentifiableString] = Field(default_factory=list, description="改善点のリスト")
     priority: ImprovementPriority = Field(..., description="改善優先度")
     applicable_hooks: List[MediaHookType] = Field(
         default_factory=list, description="この段落に適用可能なメディアフック"
@@ -114,9 +114,9 @@ class OverallAssessment(BaseModel):
     """全体評価サマリー"""
 
     total_score: float = Field(..., ge=0, le=5, description="総合スコア（0-5）")
-    strengths: List[str] = Field(default_factory=list, description="強み")
-    weaknesses: List[str] = Field(default_factory=list, description="改善が必要な点")
-    top_recommendations: List[str] = Field(
+    strengths: List[IdentifiableString] = Field(default_factory=list, description="強み")
+    weaknesses: List[IdentifiableString] = Field(default_factory=list, description="改善が必要な点")
+    top_recommendations: List[IdentifiableString] = Field(
         default_factory=list, description="最優先の改善推奨事項"
     )
     estimated_impact: str = Field(..., description="改善による期待される影響")

@@ -8,6 +8,7 @@ import time
 import httpx
 import base64
 from typing import List, Optional
+from bs4 import BeautifulSoup
 
 import httpx
 import instructor
@@ -95,7 +96,7 @@ MEDIA_HOOK_DETAILS = {
 }
 
 
-# --- PR TIMES API エンドポイント (変更なし) ---
+# --- PR TIMES API エンドポイント ---
 @app.get("/companies", response_model=List[Company], tags=["PR TIMES"])
 async def get_companies():
     url = f"{PRTIMES_BASE_URL}/companies"
@@ -153,7 +154,7 @@ async def get_company_releases(
             raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- プレスリリース分析エンドポイント (ロジックを修正・整理) ---
+# --- プレスリリース分析エンドポイント  ---
 @app.post("/analyze", response_model=PressReleaseAnalysisResponse, tags=["Analysis"])
 async def analyze_press_release(data: PressReleaseInput = Body(...)):
     request_id = f"req_{uuid.uuid4()}"
@@ -166,8 +167,13 @@ async def analyze_press_release(data: PressReleaseInput = Body(...)):
         # --- プロンプトとメッセージの準備 ---
 
         # 1. 本文を段落に分割し、AIが認識しやすいように番号付けする
+        # HTMLをパースして、構造を維持したままプレーンテキストに変換する
+        soup = BeautifulSoup(data.content_html, 'html.parser')
+        plain_text_content = soup.get_text(separator='\n\n', strip=True)
+
+        # 1. 変換後のテキストを段落に分割し、AIが認識しやすいように番号付けする
         paragraphs = [
-            p.strip() for p in data.content_markdown.split("\n\n") if p.strip()
+            p.strip() for p in plain_text_content.split("\n\n") if p.strip()
         ]
         formatted_content = ""
         if not paragraphs:
@@ -181,7 +187,7 @@ async def analyze_press_release(data: PressReleaseInput = Body(...)):
         text_prompt = f"""
         # 指示
         あなたは日本の広報・PR分野におけるトップ専門家です。
-        以下のプレスリリース（テキストと画像）を分析し、メディアフックの観点から厳しく評価と改善提案を行ってください。
+        以下のプレスリリース（テキストと画像）を分析し、メディアフックの観点から評価と改善提案を行ってください。
         特に「画像・映像」の項目は、提供された画像を直接評価してください。
         出力は必ず指定されたJSON形式に従ってください。
 
@@ -200,7 +206,6 @@ async def analyze_press_release(data: PressReleaseInput = Body(...)):
                     response = await http_client.get(data.top_image.url, timeout=20) # タイムアウトを少し延長
                     response.raise_for_status()
                     
-                    # 【修正点】非同期でレスポンスボディを読み込み、イベントループのブロッキングを回避
                     image_bytes = await response.aread()
                     base64_image = base64.b64encode(image_bytes).decode('utf-8')
                     mime_type = response.headers.get('Content-Type', 'image/jpeg')
@@ -209,7 +214,6 @@ async def analyze_press_release(data: PressReleaseInput = Body(...)):
                         "type": "image_url",
                         "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}
                     })
-            # 【修正点】より具体的なエラーハンドリングを追加
             except httpx.HTTPStatusError as img_e:
                 error_message = f"\n## トップ画像\n- 画像の取得に失敗しました (ステータスコード: {img_e.response.status_code})。"
                 print(f"Image download failed (HTTP Status): {img_e.response.status_code} for url {data.top_image.url}")
