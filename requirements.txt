@@ -1,3 +1,5 @@
+# requirements.txt
+
 # FastAPI and other app dependencies
 fastapi[all]
 openai
@@ -10,3 +12,14 @@ beautifulsoup4
 # AWS CDK libraries
 aws-cdk-lib==2.147.3
 constructs>=10.0.0,<11.0.0
+
+# db
+psycopg2-binary
+sshtunnel
+pandas
+
+# For EmbeddingGemma
+torch
+sentence-transformers
+git+https://github.com/huggingface/transformers@v4.56.0-Embedding-Gemma-preview
+huggingface_hub

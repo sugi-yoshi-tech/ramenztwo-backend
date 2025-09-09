@@ -4,15 +4,13 @@ from aws_cdk import (
     aws_ec2 as ec2,
     aws_ecs as ecs,
     aws_elasticloadbalancingv2 as elbv2,
-    aws_logs as logs,  # ### 修正点 1: logsモジュールをインポート ###
+    aws_logs as logs,
     CfnOutput,
     RemovalPolicy,
-    Duration         # ### 修正点 2: Durationクラスをインポート ###
+    Duration,         
+    IgnoreMode
 )
 from constructs import Construct
-
-# --- セキュリティに関する注意 ---
-# (省略)
 
 class InfraStack(Stack):
 
@@ -50,7 +48,7 @@ class InfraStack(Stack):
         )
 
         backend_task_definition.add_container("BackendContainer",
-            image=ecs.ContainerImage.from_asset("../", file="Dockerfile.backend"),
+            image=ecs.ContainerImage.from_asset("../", file="Dockerfile.backend",ignore_mode=IgnoreMode.DOCKER,),
             port_mappings=[ecs.PortMapping(container_port=8000)],
             environment={
                 "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
@@ -71,7 +69,7 @@ class InfraStack(Stack):
         )
 
         frontend_container = frontend_task_definition.add_container("FrontendContainer",
-            image=ecs.ContainerImage.from_asset("../", file="Dockerfile.frontend"),
+            image=ecs.ContainerImage.from_asset("../", file="Dockerfile.frontend",ignore_mode=IgnoreMode.DOCKER,),
             port_mappings=[ecs.PortMapping(container_port=8501)],
             # ### 修正点 1: 作成したLogGroupオブジェクトを渡す ###
             logging=ecs.LogDrivers.aws_logs(

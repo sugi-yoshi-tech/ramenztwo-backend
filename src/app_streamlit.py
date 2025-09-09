@@ -1,3 +1,5 @@
+# app_streamlit.py (修正版)
+
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
@@ -12,12 +14,16 @@ ANALYZE_URL = f"{API_BASE_URL}/analyze"
 st.set_page_config(page_title="プレスリリース改善AI", page_icon="🤖", layout="wide")
 
 # --------------------------------------------------------------------------
-# API通信を行う関数 (変更なし)
+# API通信を行う関数 (★修正)
 # --------------------------------------------------------------------------
 @st.cache_data
-def get_companies():
+def get_companies(source="api", keyword=None): # ★修正: sourceとkeyword引数を追加
     try:
-        response = requests.get(COMPANIES_URL, timeout=30)
+        params = {"source": source} # ★追加
+        if source == "db" and keyword: # ★追加
+            params["keyword"] = keyword
+        
+        response = requests.get(COMPANIES_URL, params=params, timeout=30) # ★修正: paramsを渡す
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -25,10 +31,19 @@ def get_companies():
         return []
 
 @st.cache_data
-def get_releases(company_id, from_date, to_date):
+def get_releases(company_id, from_date, to_date, source="api", keyword=None): # ★修正: sourceとkeyword引数を追加
     if not company_id: return []
     releases_url = f"{API_BASE_URL}/companies/{company_id}/releases"
-    params = {"from_date": from_date.strftime('%Y-%m-%d'), "to_date": to_date.strftime('%Y-%m-%d')}
+    
+    # ★修正: パラメータの組み立て
+    params = {
+        "from_date": from_date.strftime('%Y-%m-%d'), 
+        "to_date": to_date.strftime('%Y-%m-%d'),
+        "source": source
+    }
+    if source == "db" and keyword:
+        params["keyword"] = keyword
+
     try:
         response = requests.get(releases_url, params=params, timeout=60)
         response.raise_for_status()
@@ -55,11 +70,22 @@ st.sidebar.info("このアプリを動作させるには、別ターミナルで
 st.divider()
 
 # --- ステップ1: 記事のインポート ---
-st.header("Step 1: PR TIMESから記事を選択")
+st.header("Step 1: 記事を選択")
+
+# ★追加: データソース選択とキーワード検索
+col_a, col_b = st.columns([1, 2])
+with col_a:
+    source_toggle = st.toggle("データベースから検索", value=False)
+    data_source = "db" if source_toggle else "api"
+    st.caption(f"現在のデータソース: {'データベース' if data_source == 'db' else 'PR TIMES API'}")
+with col_b:
+    search_keyword = st.text_input("キーワードで検索 (DB選択時のみ有効)", 
+                                   disabled=not source_toggle)
 
 if st.button("企業一覧を読み込む", key="load_companies"):
     with st.spinner("企業一覧を取得中..."):
-        st.session_state.companies = get_companies()
+        # ★修正: 選択されたデータソースとキーワードを渡す
+        st.session_state.companies = get_companies(source=data_source, keyword=search_keyword)
 
 if st.session_state.companies:
     selected_company = st.selectbox(
@@ -82,7 +108,14 @@ if st.session_state.companies:
                 st.error("検索開始日は終了日より前の日付に設定してください。")
             else:
                 with st.spinner(f"{selected_company['company_name']}の記事を読み込んでいます..."):
-                    st.session_state.releases = get_releases(st.session_state.selected_company_id, from_date_input, to_date_input)
+                    # ★修正: 選択されたデータソースとキーワードを渡す
+                    st.session_state.releases = get_releases(
+                        st.session_state.selected_company_id, 
+                        from_date_input, 
+                        to_date_input,
+                        source=data_source,
+                        keyword=search_keyword
+                    )
                     st.session_state.selected_release = None
 
 if st.session_state.releases:
@@ -148,10 +181,16 @@ if submitted:
         st.warning("タイトルと本文の両方を入力してください。")
     else:
         with st.spinner("AIが分析中です... しばらくお待ちください..."):
-            # ペイロードに画像URLを含める
+            
+            # ★修正: ペイロードにrelease_idを追加
+            release_id_to_send = None
+            if st.session_state.selected_release:
+                release_id_to_send = st.session_state.selected_release.get('release_id')
+            
             payload = {
+                "release_id": release_id_to_send, # ★追加
                 "title": title,
-                "content_markdown": content_markdown,
+                "content_html": content_markdown, # ★修正: content_markdownをcontent_htmlとして送信
                 "top_image": {"url": image_url if image_url.strip() else None},
                 "metadata": {"persona": metadata_persona if metadata_persona.strip() else "指定なし"}
             }
@@ -161,8 +200,22 @@ if submitted:
                 results = response.json()
                 st.success("分析が完了しました！")
                 
-                # (以降の結果表示部分は元のコードと同じ)
+                
                 st.divider()
+                
+                # ★★★★★ ここから追加 ★★★★★
+                # --- 類似記事の表示 ---
+                if "similar_releases" in results and results["similar_releases"]:
+                    st.subheader("🤖 AIが推薦する類似記事")
+                    st.info("分析した記事のタイトルに基づき、データベース内から類似した記事を推薦します。")
+                    for release in results["similar_releases"]:
+                        with st.container(border=True):
+                            st.markdown(f"**{release['title']}**")
+                            st.caption(f"リリースID: {release['release_id']}")
+                    st.divider()
+                # ★★★★★ ここまで追加 ★★★★★
+
+                # (以降の結果表示部分は元のコードと同じ)
                 # ... (結果表示のコードは変更ないため省略) ...
 
             except requests.exceptions.RequestException as e:
