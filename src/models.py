@@ -1,12 +1,13 @@
+# models.py
+
 """
 プレスリリース改善WebアプリケーションのAPIデータ型定義
 FastAPI用のPydanticモデル
 """
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from enum import Enum
-import re
 
 # ================================================================================
 # Enums
@@ -14,16 +15,15 @@ import re
 
 class MediaHookType(str, Enum):
     """メディアフックの種類"""
-    TRENDING_SEASONAL = "trending_seasonal"  # 時流・季節性
-    UNEXPECTEDNESS = "unexpectedness"  # 意外性
-    PARADOX_CONFLICT = "paradox_conflict"  # 逆説・対立
-    REGIONAL = "regional"  # 地域性
-    TOPICALITY = "topicality"  # 話題性
-    SOCIAL_PUBLIC = "social_public"  # 社会性・公益性
-    NOVELTY_UNIQUENESS = "novelty_uniqueness"  # 新規性・独自性
-    SUPERLATIVE_RARITY = "superlative_rarity"  # 最上級・希少性
-    VISUAL_IMPACT = "visual_impact"  # 画像・映像
-
+    TRENDING_SEASONAL = "trending_seasonal"
+    UNEXPECTEDNESS = "unexpectedness"
+    PARADOX_CONFLICT = "paradox_conflict"
+    REGIONAL = "regional"
+    TOPICALITY = "topicality"
+    SOCIAL_PUBLIC = "social_public"
+    NOVELTY_UNIQUENESS = "novelty_uniqueness"
+    SUPERLATIVE_RARITY = "superlative_rarity"
+    VISUAL_IMPACT = "visual_impact"
 
 class EvaluationScore(int, Enum):
     """5段階評価スコア"""
@@ -33,7 +33,6 @@ class EvaluationScore(int, Enum):
     GOOD = 4
     EXCELLENT = 5
 
-
 class ImprovementPriority(str, Enum):
     """改善優先度"""
     LOW = "low"
@@ -41,52 +40,41 @@ class ImprovementPriority(str, Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
-
 # ================================================================================
 # Request Models (入力データ)
 # ================================================================================
 
 class ImageData(BaseModel):
-    """画像データ"""
-    url: Optional[str] = Field(None, description="画像URL") # HttpUrlからstrに変更
-    base64_data: Optional[str] = Field(None, description="Base64エンコードされた画像データ")
-    mime_type: Optional[str] = Field(None, description="画像のMIMEタイプ (例: image/jpeg)")
-    alt_text: Optional[str] = Field(None, description="画像の代替テキスト")
-
-    @field_validator('base64_data')
-    def validate_base64(cls, v):
-        if v and not re.match(r'^data:image\/[a-zA-Z]+;base64,', v):
-             # Base64データにプレフィックスがない場合は追加
-            return f"data:image/jpeg;base64,{v}"
-        return v
+    """
+    画像データ
+    【修正点】
+    - 使用していない `base64_data`, `mime_type`, `alt_text` フィールドを削除
+    - `base64_data` に紐づく不要な `field_validator` を削除
+    """
+    url: Optional[str] = Field(None, description="画像URL")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "url": "https://example.com/image.jpg",
-                "mime_type": "image/jpeg",
-                "alt_text": "プレスリリースのトップ画像"
+                "url": "https://example.com/image.jpg"
             }
         }
-
 
 class MetadataInput(BaseModel):
     """メタデータ（ペルソナ情報）"""
     persona: str = Field("指定なし", description="ターゲットペルソナ")
-
 
 class PressReleaseInput(BaseModel):
     """プレスリリース入力データ"""
     title: str = Field(..., min_length=1, max_length=200, description="記事のタイトル")
     top_image: Optional[ImageData] = Field(None, description="トップ画像")
     content_markdown: str = Field(..., min_length=1, description="プレスリリース本文（Markdown形式）")
-    # metadataの型を汎用的なDictから専用のMetadataInputモデルに変更
     metadata: MetadataInput
-
 
 # ================================================================================
 # Response Models (出力データ)
 # ================================================================================
+# (変更なしのため、元のコードと同じ)
 
 class MediaHookEvaluation(BaseModel):
     """メディアフック評価"""
@@ -96,7 +84,6 @@ class MediaHookEvaluation(BaseModel):
     description: str = Field(..., description="評価の説明")
     improve_examples: List[str] = Field(default_factory=list, description="改善例")
     current_elements: List[str] = Field(default_factory=list, description="現在含まれている要素")
-
 
 class ParagraphImprovement(BaseModel):
     """段落ごとの改善提案"""
@@ -118,32 +105,18 @@ class OverallAssessment(BaseModel):
     top_recommendations: List[str] = Field(default_factory=list, description="最優先の改善推奨事項")
     estimated_impact: str = Field(..., description="改善による期待される影響")
 
-
 class PressReleaseAnalysisResponse(BaseModel):
     """プレスリリース分析結果のレスポンス"""
     request_id: str = Field(..., description="リクエストID（トラッキング用）")
     analyzed_at: datetime = Field(default_factory=datetime.now, description="分析実行日時")
-
-    # メイン分析結果
-    media_hook_evaluations: List[MediaHookEvaluation] = Field(
-        ...,
-        description="9つのメディアフックに対する評価",
-        min_length=9,
-        max_length=9
-    )
-    paragraph_improvements: List[ParagraphImprovement] = Field(
-        ...,
-        description="段落ごとの改善提案"
-    )
-    overall_assessment: OverallAssessment = Field(..., description="全体評価サマリー")
-
-    # 追加情報
-    processing_time_ms: Optional[int] = Field(None, description="処理時間（ミリ秒）")
-    ai_model_used: Optional[str] = Field(None, description="使用したAIモデル")
+    media_hook_evaluations: List[MediaHookEvaluation] = Field(..., min_length=9, max_length=9)
+    paragraph_improvements: List[ParagraphImprovement] = Field(...)
+    overall_assessment: OverallAssessment = Field(...)
+    processing_time_ms: Optional[int] = Field(None)
+    ai_model_used: Optional[str] = Field(None)
 
     @field_validator('media_hook_evaluations')
     def validate_all_hooks_present(cls, v):
-        """全てのメディアフックが評価されているか確認"""
         hook_types = {eval.hook_type for eval in v}
         expected_hooks = set(MediaHookType)
         if hook_types != expected_hooks:
@@ -154,9 +127,9 @@ class PressReleaseAnalysisResponse(BaseModel):
 # ================================================================================
 # PR TIMES API Response Models
 # ================================================================================
+# (変更なしのため、元のコードと同じ)
 
 class Company(BaseModel):
-    """PR TIMES APIから取得する企業情報"""
     company_id: int
     company_name: str
     president_name: Optional[str] = None
@@ -167,11 +140,10 @@ class Company(BaseModel):
     ipo_type: Optional[str] = None
     capital: Optional[int] = None
     foundation_date: Optional[str] = None
-    url: Optional[str] = None # HttpUrlの代わりにstrを使用
+    url: Optional[str] = None
     twitter_screen_name: Optional[str] = None
 
 class PressRelease(BaseModel):
-    """PR TIMES APIから取得するプレスリリース情報"""
     company_name: str
     company_id: int
     release_id: int
